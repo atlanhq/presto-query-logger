@@ -2,6 +2,8 @@ package com.atlan.QueryAuditEventListener;
 
 import io.prestosql.spi.Plugin;
 import io.prestosql.spi.eventlistener.EventListenerFactory;
+import io.prestosql.spi.eventlistener.QueryCompletedEvent;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
