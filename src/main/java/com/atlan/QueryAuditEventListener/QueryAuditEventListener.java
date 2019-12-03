@@ -1,13 +1,16 @@
 package com.atlan.QueryAuditEventListener;
 
-import io.prestosql.spi.eventlistener.EventListener;
-import io.prestosql.spi.eventlistener.QueryCompletedEvent;
-import io.prestosql.spi.eventlistener.QueryCreatedEvent;
-import io.prestosql.spi.eventlistener.QueryFailureInfo;
+import io.prestosql.spi.PrestoWarning;
+import io.prestosql.spi.eventlistener.*;
 
+import java.time.Duration;
 import java.util.*;
+import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.logging.Logger;
+import java.util.stream.Collectors;
+
+import io.prestosql.spi.eventlistener.EventListener;
 import org.apache.http.HttpHost;
 import org.elasticsearch.action.index.IndexRequest;
 import org.elasticsearch.action.update.UpdateRequest;
@@ -71,9 +74,6 @@ public class QueryAuditEventListener implements EventListener {
          jsonMap.put("createdAt", queryCreatedEvent.getCreateTime().toString());
          jsonMap.put("serverAddress", queryCreatedEvent.getContext().getServerAddress());
          jsonMap.put("queryType", queryType);
-         if (!queryCreatedEvent.getContext().getSessionProperties().isEmpty()) {
-            jsonMap.put("sessionProperties", queryCreatedEvent.getContext().getSessionProperties().toString());
-         }
          if (queryCreatedEvent.getContext().getPrincipal().isPresent()) {
             jsonMap.put("principal", queryCreatedEvent.getContext().getPrincipal().get());
          }
@@ -112,21 +112,99 @@ public class QueryAuditEventListener implements EventListener {
 
    public void queryCompleted(QueryCompletedEvent queryCompletedEvent) {
       try {
-         Map<String, Object> jsonMap = new HashMap();
+         Map<String, Object> jsonMap = new HashMap<>();
          String esId = queryCompletedEvent.getMetadata().getQueryId();
-         jsonMap.put("state", queryCompletedEvent.getMetadata().getQueryState());
-         jsonMap.put("wallTime", queryCompletedEvent.getStatistics().getWallTime().toMillis());
-         jsonMap.put("cpuTime", queryCompletedEvent.getStatistics().getCpuTime().toMillis());
-         jsonMap.put("cumulativeMemory", queryCompletedEvent.getStatistics().getCumulativeMemory());
-         jsonMap.put("queuedTime", queryCompletedEvent.getStatistics().getQueuedTime().toMillis());
-         jsonMap.put("totalRows", queryCompletedEvent.getStatistics().getTotalRows());
-         jsonMap.put("outputRows", queryCompletedEvent.getStatistics().getOutputRows());
-         jsonMap.put("peakTaskTotalMemory", queryCompletedEvent.getStatistics().getPeakTaskTotalMemory());
-         jsonMap.put("peakTaskUserMemory", queryCompletedEvent.getStatistics().getPeakTaskUserMemory());
-         jsonMap.put("physicalInputBytes", queryCompletedEvent.getStatistics().getPhysicalInputBytes());
-         jsonMap.put("physicalInputRows", queryCompletedEvent.getStatistics().getPhysicalInputRows());
-         jsonMap.put("writtenDataRows", queryCompletedEvent.getStatistics().getWrittenRows());
-         jsonMap.put("writtenDataBytes", queryCompletedEvent.getStatistics().getWrittenBytes());
+
+         //metadata
+         QueryMetadata metadata = queryCompletedEvent.getMetadata();
+         jsonMap.put("state", metadata.getQueryState());
+         if (metadata.getPlan().isPresent()) {
+            jsonMap.put("queryPlan", metadata.getPlan().get());
+         }
+         if (metadata.getPayload().isPresent()) {
+            jsonMap.put("queryPayload", metadata.getPayload().get());
+         }
+         if (metadata.getTransactionId().isPresent()) {
+            jsonMap.put("queryTransactionId", metadata.getTransactionId().get());
+         }
+         // stats
+         QueryStatistics stats = queryCompletedEvent.getStatistics();
+         jsonMap.put("cpuTime", stats.getCpuTime().getSeconds());
+         jsonMap.put("wallTime", stats.getWallTime().getSeconds());
+         jsonMap.put("queuedTime", stats.getQueuedTime().getSeconds());
+         if (stats.getResourceWaitingTime().isPresent()) {
+            jsonMap.put("waitingTime", stats.getResourceWaitingTime().get().getSeconds());
+         }
+         if (stats.getAnalysisTime().isPresent()) {
+            jsonMap.put("analysisTime", stats.getAnalysisTime().get().getSeconds());
+         }
+         if (stats.getDistributedPlanningTime().isPresent()) {
+            jsonMap.put("distributedPlanningTime", stats.getDistributedPlanningTime().get().getSeconds());
+         }
+         jsonMap.put("peakUserMemoryBytes", stats.getPeakUserMemoryBytes());
+         jsonMap.put("peakTotalNonRevocableMemoryBytes", stats.getPeakTotalNonRevocableMemoryBytes());
+         jsonMap.put("peakTaskUserMemory", stats.getPeakTaskUserMemory());
+         jsonMap.put("peakTaskTotalMemory", stats.getPeakTaskTotalMemory());
+         jsonMap.put("physicalInputBytes", stats.getPhysicalInputBytes());
+         jsonMap.put("physicalInputRows", stats.getPhysicalInputRows());
+         jsonMap.put("internalNetworkBytes", stats.getInternalNetworkBytes());
+         jsonMap.put("internalNetworkRows", stats.getInternalNetworkRows());
+         jsonMap.put("totalBytes", stats.getTotalBytes());
+         jsonMap.put("totalRows", stats.getTotalRows());
+         jsonMap.put("outputBytes", stats.getOutputBytes());
+         jsonMap.put("outputRows", stats.getOutputRows());
+         jsonMap.put("writtenBytes", stats.getWrittenBytes());
+         jsonMap.put("writtenRows", stats.getWrittenRows());
+         jsonMap.put("cumulativeMemory", stats.getCumulativeMemory());
+//         jsonMap.put("stageGcStatistics", stats.getStageGcStatistics());
+         jsonMap.put("completedSplits", stats.getCompletedSplits());
+//         jsonMap.put("cpuTimeDistribution", stats.getCpuTimeDistribution());
+         jsonMap.put("operatorSummaries", String.join(",", stats.getOperatorSummaries()));
+         if (stats.getPlanNodeStatsAndCosts().isPresent()) {
+            jsonMap.put("planNodeStatsAndCosts", stats.getPlanNodeStatsAndCosts().get());
+         }
+         // query io metadata
+
+         QueryIOMetadata ioMetadata = queryCompletedEvent.getIoMetadata();
+//         jsonMap.put("ioMetadataInput", ioMetadata.getInputs());
+//         if (ioMetadata.getOutput().isPresent()) {
+//            jsonMap.put("ioMetadataOutput", ioMetadata.getOutput());
+//         }
+
+         // query context
+         QueryContext queryContext = queryCompletedEvent.getContext();
+         jsonMap.put("serverVersion", queryContext.getServerVersion());
+
+//         ArrayList<String> sessionProps = new ArrayList<>();
+         String sessionProps = queryContext.getSessionProperties().entrySet().stream()
+                 .map(
+                         stringStringEntry -> stringStringEntry.getKey() + "=" + stringStringEntry.getValue()
+                 ).collect(Collectors.joining(","));
+
+
+//         for (Map.Entry<String, String> entry: queryContext.getSessionProperties().entrySet()) {
+//            sessionProps.add(entry.getKey() + "=" + entry.getValue());
+//         }
+         jsonMap.put("sessionProperties", sessionProps);
+         if (queryContext.getResourceEstimates().getCpuTime().isPresent()) {
+            jsonMap.put("resourceEstimateCPUTimeBeta", queryContext.getResourceEstimates().getCpuTime().get().toMillis() / 1000);
+         }
+         if (queryContext.getResourceEstimates().getExecutionTime().isPresent()) {
+            jsonMap.put("resourceEstimateExecutionTimeBeta", queryContext.getResourceEstimates().getExecutionTime().get().toMillis() / 1000);
+         }
+         if (queryContext.getResourceEstimates().getPeakMemory().isPresent()) {
+            jsonMap.put("resourceEstimatePeakMemoryBeta", queryContext.getResourceEstimates().getPeakMemory().get().toBytes());
+         }
+
+         // presto warnings
+
+         jsonMap.put("prestoWarnings", queryCompletedEvent.getWarnings().stream()
+                 .map(PrestoWarning::toString).collect(Collectors.joining(",")));
+
+         // misc
+         jsonMap.put("createTime", queryCompletedEvent.getCreateTime().toString());
+         jsonMap.put("executionStartTime", queryCompletedEvent.getExecutionStartTime().toString());
+         jsonMap.put("endTime", queryCompletedEvent.getEndTime().toString());
 
          try {
             if (queryCompletedEvent.getFailureInfo().isPresent()) {
