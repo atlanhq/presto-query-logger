@@ -1,10 +1,14 @@
 package com.atlan.QueryAuditEventListener;
 
+import io.prestosql.spi.PrestoWarning;
 import io.prestosql.spi.eventlistener.*;
 
+import java.time.Duration;
 import java.util.*;
+import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.logging.Logger;
+import java.util.stream.Collectors;
 
 import io.prestosql.spi.eventlistener.EventListener;
 import org.apache.http.HttpHost;
@@ -70,9 +74,6 @@ public class QueryAuditEventListener implements EventListener {
          jsonMap.put("createdAt", queryCreatedEvent.getCreateTime().toString());
          jsonMap.put("serverAddress", queryCreatedEvent.getContext().getServerAddress());
          jsonMap.put("queryType", queryType);
-         if (!queryCreatedEvent.getContext().getSessionProperties().isEmpty()) {
-            jsonMap.put("sessionProperties", queryCreatedEvent.getContext().getSessionProperties().toString());
-         }
          if (queryCreatedEvent.getContext().getPrincipal().isPresent()) {
             jsonMap.put("principal", queryCreatedEvent.getContext().getPrincipal().get());
          }
@@ -111,7 +112,7 @@ public class QueryAuditEventListener implements EventListener {
 
    public void queryCompleted(QueryCompletedEvent queryCompletedEvent) {
       try {
-         Map<String, Object> jsonMap = new HashMap();
+         Map<String, Object> jsonMap = new HashMap<>();
          String esId = queryCompletedEvent.getMetadata().getQueryId();
 
          //metadata
@@ -128,17 +129,17 @@ public class QueryAuditEventListener implements EventListener {
          }
          // stats
          QueryStatistics stats = queryCompletedEvent.getStatistics();
-         jsonMap.put("cpuTime", stats.getCpuTime());
-         jsonMap.put("wallTime", stats.getWallTime());
-         jsonMap.put("queuedTime", stats.getQueuedTime());
+         jsonMap.put("cpuTime", stats.getCpuTime().getSeconds());
+         jsonMap.put("wallTime", stats.getWallTime().getSeconds());
+         jsonMap.put("queuedTime", stats.getQueuedTime().getSeconds());
          if (stats.getResourceWaitingTime().isPresent()) {
-            jsonMap.put("waitingTime", stats.getResourceWaitingTime().get());
+            jsonMap.put("waitingTime", stats.getResourceWaitingTime().get().getSeconds());
          }
          if (stats.getAnalysisTime().isPresent()) {
-            jsonMap.put("analysisTime", stats.getAnalysisTime().get());
+            jsonMap.put("analysisTime", stats.getAnalysisTime().get().getSeconds());
          }
          if (stats.getDistributedPlanningTime().isPresent()) {
-            jsonMap.put("distributedPlanningTime", stats.getDistributedPlanningTime().get());
+            jsonMap.put("distributedPlanningTime", stats.getDistributedPlanningTime().get().getSeconds());
          }
          jsonMap.put("peakUserMemoryBytes", stats.getPeakUserMemoryBytes());
          jsonMap.put("peakTotalNonRevocableMemoryBytes", stats.getPeakTotalNonRevocableMemoryBytes());
@@ -155,42 +156,55 @@ public class QueryAuditEventListener implements EventListener {
          jsonMap.put("writtenBytes", stats.getWrittenBytes());
          jsonMap.put("writtenRows", stats.getWrittenRows());
          jsonMap.put("cumulativeMemory", stats.getCumulativeMemory());
-         jsonMap.put("stageGcStatistics", stats.getStageGcStatistics());
+//         jsonMap.put("stageGcStatistics", stats.getStageGcStatistics());
          jsonMap.put("completedSplits", stats.getCompletedSplits());
-         jsonMap.put("cpuTimeDistribution", stats.getCpuTimeDistribution());
-         jsonMap.put("operatorSummaries", stats.getOperatorSummaries());
+//         jsonMap.put("cpuTimeDistribution", stats.getCpuTimeDistribution());
+         jsonMap.put("operatorSummaries", String.join(",", stats.getOperatorSummaries()));
          if (stats.getPlanNodeStatsAndCosts().isPresent()) {
             jsonMap.put("planNodeStatsAndCosts", stats.getPlanNodeStatsAndCosts().get());
          }
          // query io metadata
 
          QueryIOMetadata ioMetadata = queryCompletedEvent.getIoMetadata();
-         jsonMap.put("ioMetadataInput", ioMetadata.getInputs());
-         if (ioMetadata.getOutput().isPresent()) {
-            jsonMap.put("ioMetadataOutput", ioMetadata.getOutput());
-         }
+//         jsonMap.put("ioMetadataInput", ioMetadata.getInputs());
+//         if (ioMetadata.getOutput().isPresent()) {
+//            jsonMap.put("ioMetadataOutput", ioMetadata.getOutput());
+//         }
 
          // query context
          QueryContext queryContext = queryCompletedEvent.getContext();
          jsonMap.put("serverVersion", queryContext.getServerVersion());
-         jsonMap.put("sessionProperties", queryContext.getSessionProperties());
+
+//         ArrayList<String> sessionProps = new ArrayList<>();
+         String sessionProps = queryContext.getSessionProperties().entrySet().stream()
+                 .map(
+                         stringStringEntry -> stringStringEntry.getKey() + "=" + stringStringEntry.getValue()
+                 ).collect(Collectors.joining(","));
+
+
+//         for (Map.Entry<String, String> entry: queryContext.getSessionProperties().entrySet()) {
+//            sessionProps.add(entry.getKey() + "=" + entry.getValue());
+//         }
+         jsonMap.put("sessionProperties", sessionProps);
          if (queryContext.getResourceEstimates().getCpuTime().isPresent()) {
-            jsonMap.put("resourceEstimateCPUTimeBeta", queryContext.getResourceEstimates().getCpuTime().get());
+            jsonMap.put("resourceEstimateCPUTimeBeta", queryContext.getResourceEstimates().getCpuTime().get().toMillis() / 1000);
          }
          if (queryContext.getResourceEstimates().getExecutionTime().isPresent()) {
-            jsonMap.put("resourceEstimateExecutionTimeBeta", queryContext.getResourceEstimates().getExecutionTime().get());
+            jsonMap.put("resourceEstimateExecutionTimeBeta", queryContext.getResourceEstimates().getExecutionTime().get().toMillis() / 1000);
          }
          if (queryContext.getResourceEstimates().getPeakMemory().isPresent()) {
-            jsonMap.put("resourceEstimatePeakMemoryBeta", queryContext.getResourceEstimates().getPeakMemory().get());
+            jsonMap.put("resourceEstimatePeakMemoryBeta", queryContext.getResourceEstimates().getPeakMemory().get().toBytes());
          }
 
          // presto warnings
-         jsonMap.put("prestoWarnings", queryCompletedEvent.getWarnings());
+
+         jsonMap.put("prestoWarnings", queryCompletedEvent.getWarnings().stream()
+                 .map(PrestoWarning::toString).collect(Collectors.joining(",")));
 
          // misc
-         jsonMap.put("createTime", queryCompletedEvent.getCreateTime());
-         jsonMap.put("executionStartTime", queryCompletedEvent.getExecutionStartTime());
-         jsonMap.put("endTime", queryCompletedEvent.getEndTime());
+         jsonMap.put("createTime", queryCompletedEvent.getCreateTime().toString());
+         jsonMap.put("executionStartTime", queryCompletedEvent.getExecutionStartTime().toString());
+         jsonMap.put("endTime", queryCompletedEvent.getEndTime().toString());
 
          try {
             if (queryCompletedEvent.getFailureInfo().isPresent()) {
