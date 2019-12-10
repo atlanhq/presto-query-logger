@@ -10,6 +10,8 @@ import java.util.function.Supplier;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
+import org.json.JSONObject;
+import org.json.JSONTokener;
 import io.prestosql.spi.eventlistener.EventListener;
 import org.apache.http.HttpHost;
 import org.elasticsearch.action.index.IndexRequest;
@@ -18,10 +20,12 @@ import org.elasticsearch.client.RequestOptions;
 import org.elasticsearch.client.RestClient;
 import org.elasticsearch.client.RestHighLevelClient;
 import org.elasticsearch.common.unit.TimeValue;
+import io.airlift.units.DataSize;
 
 public class QueryAuditEventListener implements EventListener {
    Logger logger;
    final String loggerName = "QueryLog";
+   final String loggerVersion = "v1.1";
    RestHighLevelClient client;
    final String indexName = "atlan-query-logs";
    final String typeName = "logs";
@@ -74,6 +78,7 @@ public class QueryAuditEventListener implements EventListener {
          jsonMap.put("createdAt", queryCreatedEvent.getCreateTime().toString());
          jsonMap.put("serverAddress", queryCreatedEvent.getContext().getServerAddress());
          jsonMap.put("queryType", queryType);
+         jsonMap.put("loggerVersion", this.loggerVersion);
          if (queryCreatedEvent.getContext().getPrincipal().isPresent()) {
             jsonMap.put("principal", queryCreatedEvent.getContext().getPrincipal().get());
          }
@@ -159,7 +164,21 @@ public class QueryAuditEventListener implements EventListener {
 //         jsonMap.put("stageGcStatistics", stats.getStageGcStatistics());
          jsonMap.put("completedSplits", stats.getCompletedSplits());
 //         jsonMap.put("cpuTimeDistribution", stats.getCpuTimeDistribution());
-         jsonMap.put("operatorSummaries", String.join(",", stats.getOperatorSummaries()));
+//         jsonMap.put("operatorSummaries", String.join(",", stats.getOperatorSummaries()));
+         long physicalWrittenData = DataSize.valueOf("0B").toBytes();
+         long spilledDataSize = DataSize.valueOf("0B").toBytes();
+         ArrayList<Map<String, Object>> operatorSummaries = new ArrayList<>();
+         for (String operatorSummary : stats.getOperatorSummaries()) {
+            Map<String, Object> stringObjectMap = new JSONObject(new JSONTokener(operatorSummary)).toMap();
+            operatorSummaries.add(stringObjectMap);
+            DataSize operatorPhysicalWrittenData = DataSize.valueOf((String) stringObjectMap.get("physicalWrittenDataSize"));
+            DataSize operatorSpilledDataSize = DataSize.valueOf((String) stringObjectMap.get("spilledDataSize"));
+            physicalWrittenData += operatorPhysicalWrittenData.toBytes();
+            spilledDataSize += operatorSpilledDataSize.toBytes();
+         }
+         jsonMap.put("physicalWrittenData", physicalWrittenData);
+         jsonMap.put("spilledDataSize", spilledDataSize);
+         jsonMap.put("operatorSummaries", stats.getOperatorSummaries());
          if (stats.getPlanNodeStatsAndCosts().isPresent()) {
             jsonMap.put("planNodeStatsAndCosts", stats.getPlanNodeStatsAndCosts().get());
          }
