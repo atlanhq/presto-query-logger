@@ -1,5 +1,6 @@
 package com.atlan.QueryAuditEventListener;
 
+import com.github.wnameless.json.flattener.JsonFlattener;
 import io.prestosql.spi.PrestoWarning;
 import io.prestosql.spi.eventlistener.*;
 
@@ -25,7 +26,7 @@ import io.airlift.units.DataSize;
 public class QueryAuditEventListener implements EventListener {
    Logger logger;
    final String loggerName = "QueryLog";
-   final String loggerVersion = "v1.1";
+   final String loggerVersion = "v1.2";
    RestHighLevelClient client;
    final String indexName = "atlan-query-logs";
    final String typeName = "logs";
@@ -132,6 +133,24 @@ public class QueryAuditEventListener implements EventListener {
          if (metadata.getTransactionId().isPresent()) {
             jsonMap.put("queryTransactionId", metadata.getTransactionId().get());
          }
+
+         // query source
+
+         if (queryCompletedEvent.getContext().getSource().isPresent()) {
+            String querySource = (String) queryCompletedEvent.getContext().getSource().get();
+            HashMap<String, Object> querySourceFlat = flatten(querySource);
+            HashMap<String, Object> tmp = new HashMap<>();
+            if (querySourceFlat.isEmpty()) {
+               tmp.put("source", querySource);
+            }
+            else {
+               tmp.put("source", querySourceFlat.get("contextType"));
+               tmp.putAll(addPrefixToMapKeys(querySourceFlat, "meta_"));
+            }
+            querySourceFlat = tmp;
+            jsonMap.putAll(querySourceFlat);
+         }
+
          // stats
          QueryStatistics stats = queryCompletedEvent.getStatistics();
          jsonMap.put("cpuTime", stats.getCpuTime().getSeconds());
@@ -277,6 +296,20 @@ public class QueryAuditEventListener implements EventListener {
          this.logger.warning(var4.getMessage());
          this.logger.warning("_____________--------Error1-------___________");
       }
-
+   }
+   public static HashMap<String, Object> flatten(String jsonString) {
+      try {
+         return (HashMap<String, Object>) JsonFlattener.flattenAsMap(jsonString);
+      }
+      catch (Exception e) {
+         return new HashMap<>();
+      }
+   }
+   public static HashMap<String, Object> addPrefixToMapKeys(HashMap<String, Object> sourceMap, String prefix) {
+      HashMap<String, Object> returnMap = new HashMap<>();
+      for(Map.Entry<String, Object> entry: sourceMap.entrySet()) {
+         returnMap.put(prefix + entry.getKey(), entry.getValue());
+      }
+      return returnMap;
    }
 }
