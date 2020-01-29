@@ -26,7 +26,7 @@ import io.airlift.units.DataSize;
 public class QueryAuditEventListener implements EventListener {
    Logger logger;
    final String loggerName = "QueryLog";
-   final String loggerVersion = "v1.2";
+   final String loggerVersion = "v1.3";
    RestHighLevelClient client;
    final String indexName = "atlan-query-logs";
    final String typeName = "logs";
