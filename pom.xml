@@ -49,8 +49,13 @@
         <dependency>
             <groupId>io.prestosql</groupId>
             <artifactId>presto-spi</artifactId>
-            <version>316</version>
+            <version>329</version>
             <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.airlift</groupId>
+            <artifactId>units</artifactId>
+            <version>1.5</version>
         </dependency>
         <dependency>
             <groupId>org.elasticsearch.client</groupId>
