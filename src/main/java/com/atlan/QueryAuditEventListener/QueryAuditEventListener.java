@@ -287,9 +287,10 @@ public class QueryAuditEventListener implements EventListener {
       try {
          String esHost = (String)config.get("es-host");
          String esPort = (String)config.get("es-port");
+         String esProtocol = (String)config.get("es-protocol")
          this.logger = Logger.getLogger("QueryLog");
          this.logger.info(esHost);
-         this.client = new RestHighLevelClient(RestClient.builder(new HttpHost[]{new HttpHost(esHost, Integer.parseInt(esPort), "https")}));
+         this.client = new RestHighLevelClient(RestClient.builder(new HttpHost[]{new HttpHost(esHost, Integer.parseInt(esPort), esProtocol)}));
          this.logger.info("client Initialized..");
       } catch (Exception var4) {
          this.logger.warning("_____________--------Error1-------___________");
