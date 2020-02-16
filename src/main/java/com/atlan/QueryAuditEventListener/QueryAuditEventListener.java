@@ -26,10 +26,10 @@ import io.airlift.units.DataSize;
 public class QueryAuditEventListener implements EventListener {
    Logger logger;
    final String loggerName = "QueryLog";
-   final String loggerVersion = "v1.2";
+   final String loggerVersion = "v1.3";
    RestHighLevelClient client;
-   final String indexName = "atlan-query-logs";
-   final String typeName = "logs";
+   public String indexName = "atlan-query-logs";
+   public String typeName = "logs";
 
    public QueryAuditEventListener(Map<String, String> config) {
       this.initializeEsClient(config);
@@ -104,7 +104,7 @@ public class QueryAuditEventListener implements EventListener {
             jsonMap.put("schema", queryCreatedEvent.getContext().getSchema().get());
          }
 
-         IndexRequest request = (new IndexRequest("atlan-query-logs")).type("logs").id(esId).source(jsonMap);
+         IndexRequest request = (new IndexRequest("atlan-query-logs")).type(this.typeName).id(esId).source(jsonMap);
          request.timeout(TimeValue.timeValueSeconds(5L));
          this.client.index(request, RequestOptions.DEFAULT);
       } catch (Exception var7) {
@@ -270,7 +270,7 @@ public class QueryAuditEventListener implements EventListener {
             this.logger.warning("_____________--------Error3-------___________");
          }
 
-         UpdateRequest request = (new UpdateRequest("atlan-query-logs", "logs", esId)).doc(jsonMap);
+         UpdateRequest request = (new UpdateRequest("atlan-query-logs", this.typeName, esId)).doc(jsonMap);
          request.docAsUpsert(true);
          request.retryOnConflict(3);
          request.timeout(TimeValue.timeValueSeconds(5L));
@@ -287,7 +287,8 @@ public class QueryAuditEventListener implements EventListener {
       try {
          String esHost = (String)config.get("es-host");
          String esPort = (String)config.get("es-port");
-         String esProtocol = (String)config.get("es-protocol")
+         this.typeName = (String)config.get("es-type");
+         String esProtocol = (String)config.get("es-protocol");
          this.logger = Logger.getLogger("QueryLog");
          this.logger.info(esHost);
          this.client = new RestHighLevelClient(RestClient.builder(new HttpHost[]{new HttpHost(esHost, Integer.parseInt(esPort), esProtocol)}));
