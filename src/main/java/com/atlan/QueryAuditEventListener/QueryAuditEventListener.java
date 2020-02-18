@@ -26,7 +26,7 @@ import io.airlift.units.DataSize;
 public class QueryAuditEventListener implements EventListener {
    Logger logger;
    final String loggerName = "QueryLog";
-   final String loggerVersion = "v1.3";
+   final String loggerVersion = "v1.4-prestosql";
    RestHighLevelClient client;
    public String indexName = "atlan-query-logs";
    public String typeName = "logs";
@@ -162,9 +162,10 @@ public class QueryAuditEventListener implements EventListener {
          if (stats.getAnalysisTime().isPresent()) {
             jsonMap.put("analysisTime", stats.getAnalysisTime().get().getSeconds());
          }
-         if (stats.getDistributedPlanningTime().isPresent()) {
-            jsonMap.put("distributedPlanningTime", stats.getDistributedPlanningTime().get().getSeconds());
-         }
+         // Not available in prestosql-329
+//         if (stats.getDistributedPlanningTime().isPresent()) {
+//            jsonMap.put("distributedPlanningTime", stats.getDistributedPlanningTime().get().getSeconds());
+//         }
          jsonMap.put("peakUserMemoryBytes", stats.getPeakUserMemoryBytes());
          jsonMap.put("peakTotalNonRevocableMemoryBytes", stats.getPeakTotalNonRevocableMemoryBytes());
          jsonMap.put("peakTaskUserMemory", stats.getPeakTaskUserMemory());
@@ -230,8 +231,8 @@ public class QueryAuditEventListener implements EventListener {
          if (queryContext.getResourceEstimates().getExecutionTime().isPresent()) {
             jsonMap.put("resourceEstimateExecutionTimeBeta", queryContext.getResourceEstimates().getExecutionTime().get().toMillis() / 1000);
          }
-         if (queryContext.getResourceEstimates().getPeakMemory().isPresent()) {
-            jsonMap.put("resourceEstimatePeakMemoryBeta", queryContext.getResourceEstimates().getPeakMemory().get().toBytes());
+         if (queryContext.getResourceEstimates().getPeakMemoryBytes().isPresent()) {
+            jsonMap.put("resourceEstimatePeakMemoryBeta", queryContext.getResourceEstimates().getPeakMemoryBytes().get());
          }
 
          // presto warnings
